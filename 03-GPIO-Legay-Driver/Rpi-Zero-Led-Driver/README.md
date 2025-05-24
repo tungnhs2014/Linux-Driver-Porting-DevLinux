@@ -27,11 +27,9 @@ This project creates a complete system to control LED on Raspberry Pi Zero W wit
 ## Hardware Setup
 
 ```
-Pi Zero W Pin 12 (GPIO18) ──[330Ω Resistor]──[LED Anode]
-Pi Zero W Pin 6  (GND)     ────────────────────[LED Cathode]
+Pi Zero W Pin 11 (GPIO18) ──[330Ω Resistor]──[LED Anode]
+Pi Zero W Pin 9  (GND)     ────────────────────[LED Cathode]
 ```
-
-**Note**: Use GPIO18 instead of GPIO27 because Pi Zero W has hardware pull-down on GPIO27.
 
 ## Project Structure
 
@@ -157,12 +155,6 @@ git add arch/arm/configs/bcmrpi_defconfig
 
 # Save changes
 git commit -m "Add LED character device driver for Pi Zero W
-
-- Direct register access to BCM2835 GPIO
-- Character device interface /dev/led
-- Support for LED on/off control
-- GPIO 18 default pin
-- Auto-load module configuration"
 
 # Create patch file
 git format-patch -1

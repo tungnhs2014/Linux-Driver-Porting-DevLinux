@@ -1,0 +1,8 @@
+config GPIO_LED_DRIVER
+    tristate "GPIO LED Character Device Driver (Legacy GPIO Interface)"
+    depends on ARM && GPIOLIB
+    default m
+    help
+      Character device driver for LED control on Raspberry Pi Zero W
+      using Linux GPIO subsystem (legacy integer-based GPIO interface).
+      Creates /dev/gpio_led device for LED control.
