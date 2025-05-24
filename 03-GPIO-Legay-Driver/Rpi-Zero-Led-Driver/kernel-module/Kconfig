@@ -1,0 +1,7 @@
+config LED_DRIVER
+    tristate "LED Character Device Driver for Pi Zero W"
+    depends on ARM && GPIOLIB
+    default m
+    help
+      Character device driver for LED control on Raspberry Pi Zero W.
+      Creates /dev/led device for LED control via direct register access.
