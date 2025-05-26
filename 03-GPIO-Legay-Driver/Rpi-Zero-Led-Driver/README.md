@@ -51,7 +51,7 @@ rpi-zero-led-project/
     ├── recipes-kernel/
     │   └── linux/
     │       ├── linux-raspberrypi_%.bbappend
-    │       └── files/
+    │       └── linux-raspberrypi/
     │           └── 0001-Add-LED-driver-for-Pi-Zero-W.patch
     └── recipes-apps/
         └── led-control/

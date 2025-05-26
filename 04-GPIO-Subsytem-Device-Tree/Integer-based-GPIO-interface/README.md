@@ -27,7 +27,7 @@ This project creates a complete LED control system for Raspberry Pi Zero W using
 
 ```
 Pi Zero W Pin 12 (GPIO18) ──[330Ω Resistor]──[LED Anode]
-Pi Zero W Pin 6  (GND)     ────────────────────[LED Cathode]
+Pi Zero W Pin 9  (GND)     ────────────────────[LED Cathode]
 ```
 
 **Note**: Default GPIO18, but can be changed at runtime using IOCTL commands.
@@ -52,7 +52,7 @@ rpi-zero-gpio-legacy/
     ├── recipes-kernel/
     │   └── linux/
     │       ├── linux-raspberrypi_%.bbappend
-    │       └── files/
+    │       └── linux-raspberrypi/
     │           └── 0001-Add-GPIO-legacy-driver.patch
     └── recipes-apps/
         └── gpio-led-ctrl/
