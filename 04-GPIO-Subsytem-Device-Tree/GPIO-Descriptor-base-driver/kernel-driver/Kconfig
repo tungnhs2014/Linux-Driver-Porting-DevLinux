@@ -1,0 +1,14 @@
+menu "GPIO LED Descriptor Driver"
+
+config GPIO_LED_DESCRIPTOR_DRIVER
+	tristate "GPIO LED Descriptor Driver"
+	depends on GPIOLIB && OF
+	help
+	  GPIO LED control driver using descriptor API with Device Tree.
+	  
+	  Creates /dev/gpio_led character device for userspace control.
+	  Supports multiple LEDs configured via Device Tree overlay.
+	  
+	  To compile as module, choose M here.
+
+endmenu

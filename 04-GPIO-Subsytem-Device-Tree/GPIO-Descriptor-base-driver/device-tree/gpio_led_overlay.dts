@@ -1,0 +1,30 @@
+/dts-v1/;
+/plugin/;
+
+/*
+ * GPIO Descriptor LED Driver Device Tree Overlay
+ * Hardware configuration for GPIO-based LED control
+ */
+
+/ {
+    compatible = "brcm,bcm2708";
+
+    fragment@0 {
+        target-path = "/";
+        __overlay__ {
+            gpio_led_hw {
+                compatible = "custom,gpio-led-descriptor";
+                status = "okay";
+                
+                /* GPIO pin assignments using descriptors */
+                status-led-gpios = <&gpio 18 0>;    /* GPIO18, active high */
+                power-led-gpios = <&gpio 23 0>;     /* GPIO23, active high */
+                
+                /* Hardware configuration */
+                led-names = "status", "power";
+                num-leds = <2>;
+                default-brightness = <0>;
+            };
+        };
+    };
+};
