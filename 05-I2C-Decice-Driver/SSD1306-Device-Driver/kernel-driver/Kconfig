@@ -1,0 +1,14 @@
+menu "SSD1306 OLED Display Driver"
+
+config SSD1306_OLED_DRIVER
+    tristate "SSD1306 OLED Display I2C Driver"
+    depends on I2C && OF
+    help
+      I2C driver for SSD1306 OLED display with character device interface.
+      
+      Creates /dev/ssd1306 character device for userspace text display.
+      Supports 128x64 OLED displays via I2C communication.
+      
+      To compile as module, choose M here.
+
+endmenu
