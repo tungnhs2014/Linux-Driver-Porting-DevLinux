@@ -1,5 +1,5 @@
 # SSD1306 OLED Driver Makefile
-obj-$(CONFIG_SSD1306_OLED_DRIVER) += ssd1306_driver.o
+obj-$(CONFIG_SSD1306_DRIVER) += ssd1306_driver.o
 
 ifneq ($(KERNELRELEASE),)
     obj-m := ssd1306_driver.o

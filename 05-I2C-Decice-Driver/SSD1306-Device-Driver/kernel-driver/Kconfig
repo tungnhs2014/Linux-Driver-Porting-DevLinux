@@ -1,6 +1,6 @@
 menu "SSD1306 OLED Display Driver"
 
-config SSD1306_OLED_DRIVER
+config SSD1306_DRIVER
     tristate "SSD1306 OLED Display I2C Driver"
     depends on I2C && OF
     help

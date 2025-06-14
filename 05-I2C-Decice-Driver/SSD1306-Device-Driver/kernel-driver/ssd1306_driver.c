@@ -117,7 +117,7 @@ static struct i2c_driver ssd1306_i2c_driver_instance = {
         .of_match_table = ssd1306_device_tree_match_table,
         .owner = THIS_MODULE,
     },
-    .probe_new = ssd1306_i2c_probe_callback,
+    .probe = ssd1306_i2c_probe_callback,
     .remove = ssd1306_i2c_remove_callback,
     .id_table = ssd1306_i2c_device_id_table,
 };

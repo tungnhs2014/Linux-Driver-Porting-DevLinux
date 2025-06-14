@@ -56,7 +56,7 @@ struct ssd1306_device_context {
 
     /* Display state management */
     uint8_t current_cursor_line;         
-    uint8_t current_cursor_columm;      
+    uint8_t current_cursor_column;      
     char message_display_buffer[MAX_MESSAGE_BUFFER_SIZE];   // Display buffer
     
     /* Device configuration */  
@@ -65,7 +65,7 @@ struct ssd1306_device_context {
 };
 
 /* Function prototype */
-**
+/**
  * @brief Initialize SSD1306 display hardware
  * @param device_ctx Pointer to device context structure
  * @return 0 on success, negative error code on failure
