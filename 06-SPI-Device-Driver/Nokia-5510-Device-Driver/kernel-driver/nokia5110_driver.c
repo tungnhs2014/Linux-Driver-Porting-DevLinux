@@ -9,12 +9,14 @@
 #include <linux/module.h>
 #include <linux/spi/spi.h>
 #include <linux/fs.h>
-#include <linux/uacess.h>
+#include <linux/uaccess.h>
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/delay.h>
+#include <linux/cdev.h>
 #include <linux/gpio.h>
 #include <linux/of_gpio.h>
+
 
 #include "nokia5110_driver.h"
 
@@ -28,7 +30,7 @@ static int nokia5110_char_device_open(struct inode *inode_ptr, struct file *file
 static int nokia5110_char_device_release(struct inode *inode_ptr, struct file *file_ptr);
 static ssize_t nokia5110_char_device_write(struct file *file_ptr, const char __user *user_buffer, 
                                             size_t write_count, loff_t *file_position);
-static ssize_t nokia5110_char_device_read(struct file *file_ptr, const char __user *user_buffer, 
+static ssize_t nokia5110_char_device_read(struct file *file_ptr, char __user *user_buffer, 
                                             size_t read_count, loff_t *file_position);
 
 /**
@@ -79,11 +81,11 @@ static const uint8_t font_table_5x7[][5] = {
  * @brief Device Tree matching table
  * Table to match device tree compatible strings
  */
-static const struct of_device_id nokia5510_device_tree_match_table[] = {
-    {.compatible, = "simple,nokia5110-lcd"},
+static const struct of_device_id nokia5110_device_tree_match_table[] = {
+    {.compatible = "simple,nokia5110-lcd"},
     {/* sentinel */}
 };
-MODULE_DEVICE_TABLE(of, nokia5510_device_tree_match_table);
+MODULE_DEVICE_TABLE(of, nokia5110_device_tree_match_table);
 
 /**
  * @brief SPI device ID table
@@ -104,7 +106,7 @@ static const struct file_operations nokia5110_char_device_file_operations = {
     .open = nokia5110_char_device_open,
     .release = nokia5110_char_device_release,
     .write = nokia5110_char_device_write,
-    .read = nokia5110_char_device_open,
+    .read = nokia5110_char_device_read,
 };
 
 /**
@@ -114,7 +116,7 @@ static const struct file_operations nokia5110_char_device_file_operations = {
 static struct spi_driver nokia5110_spi_driver_instance = {
     .driver = {
         .name = SPI_DRIVER_NAME,
-        .of_match_table = nokia5510_device_tree_match_table,
+        .of_match_table = nokia5110_device_tree_match_table,
         .owner = THIS_MODULE,
     },
     .probe = nokia5110_spi_probe_callback,
@@ -123,14 +125,287 @@ static struct spi_driver nokia5110_spi_driver_instance = {
 };
 
 /**
+ * @brief Send command to Nokia 5110 via SPI
+ * @param device_ctx Pointer to device context
+ * @param command_byte Commnad byte to send
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_send_spi_command(struct nokia5110_device_context *device_ctx, uint8_t command_byte) {
+    int transmission_result;
+
+    /* Set D/C pin LOW for command node */
+    gpio_set_value(device_ctx->dc_gpio_pin, GPIO_LOW);
+
+    /* Send command via SPI */
+    transmission_result = spi_write(device_ctx->spi_device_ptr, &command_byte, 1);
+    if (transmission_result < 0) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to send command 0x%02X, error: %d\n", 
+                                                command_byte, transmission_result);
+        return transmission_result;
+    }
+
+    return 0;
+}
+
+/**
+ * @brief Send data to Nokia 5110 via SPI
+ * @param device_ctx Pointer to device context
+ * @param data_byte Data byte to send
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_send_spi_data(struct nokia5110_device_context *device_ctx, uint8_t data_byte) {
+    int transmission_result;
+
+    /* Set D/C pin HIGH for data node */
+    gpio_set_value(device_ctx->dc_gpio_pin, GPIO_HIGH);
+
+    /* Send data via SPI */
+    transmission_result = spi_write(device_ctx->spi_device_ptr, &data_byte, 1);
+    if (transmission_result < 0) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to send data 0x%02X, error: %d\n", 
+                                                data_byte, transmission_result);
+        return transmission_result;
+    }
+
+    return 0;
+}
+
+/**
  * @brief Initialize Nokia 5110 display hardware
  * @param device_ctx Pointer to device context structure
  * @return 0 on success, negative error code on failure
  */
 int nokia5110_initialize_display_hardware(struct nokia5110_device_context *device_ctx) {
+    dev_info(&device_ctx->spi_device_ptr->dev, "Initializing Nokia 5110 display hardware\n");
+
+    /* Resquest and configure GPIO pins */
+    if (gpio_request(device_ctx->reset_gpio_pin, "nokia5110-reset") < 0) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to request reset GPIO\n");
+        return -EIO;
+    }
+
+    if (gpio_request(device_ctx->dc_gpio_pin, "nokia5110-dc") < 0) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to request DC GPIO\n");
+        gpio_free(device_ctx->reset_gpio_pin);
+        return -EIO;
+    }
     
+    /* Configure GPIO as outputs */
+    gpio_direction_output(device_ctx->reset_gpio_pin, GPIO_HIGH);
+    gpio_direction_output(device_ctx->dc_gpio_pin, GPIO_LOW);
+
+    /* Hardware reset sequence */
+    gpio_set_value(device_ctx->reset_gpio_pin, GPIO_LOW);
+    msleep(10);
+    gpio_set_value(device_ctx->dc_gpio_pin, GPIO_HIGH);
+    msleep(10);
+
+    /* LCD initialization sequence */
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_EXTENDED_INSTR);     // Extended instruction set
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_CONTRAST);           // Set contrast
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_TEMP_COEFF);         // Temperature coefficient
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_BIAS_SYSTEM);        // Bias system
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_FUNCTION_SET);       // Function set
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_DISPLAY_CONTROL);    // Display control
+
+    /* Clear screen */
+    nokia5110_clear_display_screen(device_ctx);
+
+    /* Set initial device state */
+    device_ctx->is_display_enabled = true;
+    device_ctx->display_contrast_level = 0xB1;
+    device_ctx->current_cursor_x = 0;
+    device_ctx->current_cursor_y = 0;
+
+    dev_info(&device_ctx->spi_device_ptr->dev, "Nokia 5110 display hardware initialized successfully\n");
+    return 0;
 }
+
+/**
+ * @brief Clear entrie display screen
+ * @param device_ctx Pointer to device context structure
+ * @return 0 on success, negative error code on failure
+ */
+int nokia5110_clear_display_screen(struct nokia5110_device_context *device_ctx) {
+    int bank_index, column_index;
+
+    /* Clear all banks and columns */
+    for (bank_index = 0; bank_index < DISPLAY_TOTAL_BANKS; bank_index++) {
+        /* Set cursor position to start of bank */
+        nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_Y_ADDRESS | bank_index);
+        nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_X_ADDRESS | 0);
+
+        /* Clear all columns in this bank */
+        for (column_index = 0; column_index < DISPLAY_WIDTH_PIXELS; column_index++) {\
+            nokia5110_send_spi_data(device_ctx, 0x00);
+        }
+    }
+
+    /* Reset cursor position */
+    device_ctx->current_cursor_x = 0;
+    device_ctx->current_cursor_y = 0;
+
+    return 0;
+}
+
+/**
+ * @brief Set cursor position on display
+ * @param device_ctx Pointer to device context
+ * @param x_pos X position (0-83)
+ * @param y_pos Y position (0-5)
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_set_cursor_position(struct nokia5110_device_context *device_ctx, uint8_t x_pos, uint8_t y_pos) {
+    if (x_pos >= DISPLAY_WIDTH_PIXELS || y_pos >= DISPLAY_TOTAL_BANKS) {
+        return -EINVAL;    
+    }
+
+    /* Set Y address (bank) */
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_Y_ADDRESS | y_pos);
+
+    /* Set X addesss (column) */
+    nokia5110_send_spi_data(device_ctx, LCD_CMD_SET_X_ADDRESS | x_pos);
+
+    device_ctx->current_cursor_x = 0;
+    device_ctx->current_cursor_y = 0;
+
+    return 0;
+}
+
+/**
+ * @brief Write single character to display
+ * @param device_ctx Pointer to device context
+ * @param character Character to display
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_write_single_character(struct nokia5110_device_context *device_ctx, char character)
+{
+    int font_byte_index;
+    const uint8_t *font_data_ptr;
     
+    /* Handle newline character */
+    if (character == '\n') {
+        device_ctx->current_cursor_y++;
+        device_ctx->current_cursor_x = 0;
+        if (device_ctx->current_cursor_y >= DISPLAY_TOTAL_BANKS) {
+            device_ctx->current_cursor_y = 0;   // Wrap to top
+        }
+        nokia5110_set_cursor_position(device_ctx, device_ctx->current_cursor_x, device_ctx->current_cursor_y);
+        return 0;
+    }
+    
+    /* Handle line wrap */
+    if (device_ctx->current_cursor_x >= DISPLAY_WIDTH_PIXELS - FONT_CHAR_WIDTH) {
+        device_ctx->current_cursor_y++;
+        device_ctx->current_cursor_x = 0;
+        if (device_ctx->current_cursor_y >= DISPLAY_TOTAL_BANKS) {
+            device_ctx->current_cursor_y = 0;
+        }
+        nokia5110_set_cursor_position(device_ctx, device_ctx->current_cursor_x, device_ctx->current_cursor_y);
+    }
+    
+    /* Get font data - simple character mapping */
+    if (character >= '0' && character <= '9') {
+        font_data_ptr = font_table_5x7[character - '0' + 1]; /* +1 because space is at index 0 */
+    } else if (character >= 'A' && character <= 'Z') {
+        font_data_ptr = font_table_5x7[character - 'A' + 11];
+    } else if (character >= 'a' && character <= 'z') {
+        font_data_ptr = font_table_5x7[character - 'a' + 11]; /* Use uppercase font */
+    } else {
+        font_data_ptr = font_table_5x7[0]; /* Space for unknown characters */
+    }
+    
+    /* Send font data to display */
+    for (font_byte_index = 0; font_byte_index < 5; font_byte_index++) {
+        nokia5110_send_spi_data(device_ctx, font_data_ptr[font_byte_index]);
+    }
+    
+    /* Add space between characters */
+    nokia5110_send_spi_data(device_ctx, 0x00);
+    
+    device_ctx->current_cursor_x += FONT_CHAR_WIDTH;
+    
+    return 0;
+}
+
+/**
+ * @brief Write text string to display
+ * @param device_ctx Pointer to device context structure
+ * @param text_string Null-terminated text string to display
+ * @return 0 on success, negative error code on failure
+ */
+int nokia5110_write_text_to_display(struct nokia5110_device_context *device_ctx, 
+                                    const char *text_string)
+{
+    while (*text_string) {
+        nokia5110_write_single_character(device_ctx, *text_string++);
+    }
+    return 0;
+}
+
+/**
+ * @brief Create character device file node
+ * @param device_ctx Pointer to device context
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_create_character_device(struct nokia5110_device_context *device_ctx) {
+    int result = 0;
+    
+    dev_info(&device_ctx->spi_device_ptr->dev, "Creating Nokia 5110 character device\n");
+
+    /* Allocate character device region */
+    result = alloc_chrdev_region(&device_ctx->char_device_number, 0, 1, DEVICE_NAME);
+    if (result < 0) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to allocate character device region: %d\n", result);
+        goto allocation_failed;
+    }
+
+    dev_info(&device_ctx->spi_device_ptr->dev, "Character device allocated: major=%d, minor=%d\n", 
+                                                MAJOR(device_ctx->char_device_number), 
+                                                MINOR(device_ctx->char_device_number));
+    
+    /* Create device class */
+    device_ctx->char_device_class = class_create(THIS_MODULE, DEVICE_CLASS_NAME);
+    if (IS_ERR(device_ctx->char_device_class)) {
+        result = PTR_ERR(device_ctx->char_device_class);
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to create device class: %d\n", result);
+        goto class_creation_failed;
+    }
+
+    /* Create device node */
+    device_ctx->char_device_node = device_create(device_ctx->char_device_class, NULL,
+                                                device_ctx->char_device_number, NULL, 
+                                                DEVICE_NAME);                                   
+    if (IS_ERR(device_ctx->char_device_node)) {
+        result = PTR_ERR(device_ctx->char_device_node);
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to create device node: %d\n", result);
+        goto device_creation_failed;
+    }
+
+    /* Initialize and add character device */
+    cdev_init(&device_ctx->char_device_cdev, &nokia5110_char_device_file_operations);
+    device_ctx->char_device_cdev.owner = THIS_MODULE;
+
+    result = cdev_add(&device_ctx->char_device_cdev, device_ctx->char_device_number, 1);
+    if (result) {
+        dev_err(&device_ctx->spi_device_ptr->dev, "Failed to add character device: %d\n", result);
+        goto cdev_add_failed;
+    }
+
+    dev_info(&device_ctx->spi_device_ptr->dev, "Character device created successfully: /dev/%s\n", DEVICE_NAME);
+    return 0;
+
+    /* Error cleanup */
+cdev_add_failed:
+    device_destroy(device_ctx->char_device_class, device_ctx->char_device_number);
+device_creation_failed:
+    class_destroy(device_ctx->char_device_class);
+class_creation_failed:
+    unregister_chrdev_region(device_ctx->char_device_number, 1);
+allocation_failed:
+    return result;
+}
+
 /**
  * @brief SPI probe callback function
  * @param spi_device Pointer to SPI device structure
@@ -195,7 +470,39 @@ static int nokia5110_spi_probe_callback(struct spi_device *spi_device) {
     return 0;
 };
 
-static int nokia5110_spi_remove_callback(struct spi_device *spi_device);
+/**
+ * @brief SPI remove callback function
+ * @param spi_device Pointer to SPI device structure
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_spi_remove_callback(struct spi_device *spi_device) {
+    struct nokia5110_device_context *device_ctx = spi_get_drvdata(spi_device);
+
+    dev_info(&spi_device->dev, "Nokia 5110 SPI remove started\n");
+
+    /* Display goobye message */
+    nokia5110_write_text_to_display(device_ctx, "GOODBYE!\nShutdown...");
+    msleep(1000);
+
+    /* Clear display */
+    nokia5110_clear_display_screen(device_ctx);
+
+    /* Clean up character device */
+    cdev_del(&device_ctx->char_device_cdev);
+    device_destroy(device_ctx->char_device_class, device_ctx->char_device_number);
+    class_destroy(device_ctx->char_device_class);
+    unregister_chrdev_region(device_ctx->char_device_number, 1);
+
+    /* Free GPIO pins */
+    gpio_free(device_ctx->reset_gpio_pin);
+    gpio_free(device_ctx->dc_gpio_pin);
+
+        /* Clear global reference */
+    global_nokia5110_device = NULL;
+    
+    dev_info(&spi_device->dev, "Nokia 5110 SPI remove completed\n");
+    return 0;
+}
 
 /**
  * @brief Register SPI driver using modern marco
