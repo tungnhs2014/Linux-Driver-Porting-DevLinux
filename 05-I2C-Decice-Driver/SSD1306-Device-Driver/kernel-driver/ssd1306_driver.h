@@ -65,34 +65,9 @@ struct ssd1306_device_context {
 };
 
 /* Function prototype */
-/**
- * @brief Initialize SSD1306 display hardware
- * @param device_ctx Pointer to device context structure
- * @return 0 on success, negative error code on failure
- */
 int ssd1306_initialize_display_hardware(struct ssd1306_device_context *device_ctx);
-
-/**
- * @brief Clear entire display screen
- * @param device_ctx Pointer to device context structure  
- * @return 0 on success, negative error code on failure
- */
 int ssd1306_clear_display_screen(struct ssd1306_device_context *device_ctx);
-
-/**
- * @brief Write text string to display
- * @param device_ctx Pointer to device context structure
- * @param text_string Null-terminated text string to display
- * @return 0 on success, negative error code on failure
- */
 int ssd1306_write_text_to_display(struct ssd1306_device_context *device_ctx, const char *text_string);
-
-/**
- * @brief Set display brightness level
- * @param device_ctx Pointer to device context structure
- * @param brightness_level Brightness level (0-255)
- * @return 0 on success, negative error code on failure
- */
 int ssd1306_set_display_brightness(struct ssd1306_device_context *device_ctx, uint8_t brightness_level);
 
 #endif /* SSD1306_DRIVER_H */
