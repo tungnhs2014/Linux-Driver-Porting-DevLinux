@@ -1,0 +1,14 @@
+menu "Nokia 5110 LCD Display Driver"
+
+config NOKIA5110_LCD_DRIVER
+    tristate "Nokia 5110 LCD Display SPI Driver"
+    depends on SPI && OF
+    help
+      SPI driver for Nokia 5110 LCD display with character device interface.
+      
+      Creates /dev/nokia5110 character device for userspace text display.
+      Supports 84x48 LCD displays via SPI communication.
+      
+      To compile as module, choose M here.
+
+endmenu

@@ -1,6 +1,6 @@
 # SSD1306 OLED Write Application
 CC ?= gcc
-CFLAGS ?= -Wall -Wextra -
+CFLAGS ?= -Wall -Wextra -O2
 LDFLAGS ?=
 
 TARGET = oled_write

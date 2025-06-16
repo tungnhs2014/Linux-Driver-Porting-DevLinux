@@ -63,10 +63,11 @@ struct nokia5110_device_context {
     /* Display state management */
     uint8_t current_cursor_x;       // Current cursor X position
     uint8_t current_cursor_y;       // Current cursor Y position
+    char message_display_buffer[MAX_MESSAGE_BUFFER_SIZE]; // Display buffer
 
     /* Device configuration */
-    bool is_display_enabled;        // Display enable/disable state
-    uint8_t display_contrast_level  // Display contrast level
+    bool is_display_enabled;         // Display enable/disable state
+    uint8_t display_contrast_level;  // Display contrast level
 };
 
 /* Function prototypes with clear name */

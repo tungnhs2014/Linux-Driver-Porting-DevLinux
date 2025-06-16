@@ -120,8 +120,7 @@ static struct spi_driver nokia5110_spi_driver_instance = {
         .owner = THIS_MODULE,
     },
     .probe = nokia5110_spi_probe_callback,
-    .remove = nokia5110_spi_remove_callback,
-    .owner = THIS_MODULE,
+    .remove = nokia5110_spi_remove_callback
 };
 
 /**
@@ -197,7 +196,7 @@ int nokia5110_initialize_display_hardware(struct nokia5110_device_context *devic
     /* Hardware reset sequence */
     gpio_set_value(device_ctx->reset_gpio_pin, GPIO_LOW);
     msleep(10);
-    gpio_set_value(device_ctx->dc_gpio_pin, GPIO_HIGH);
+    gpio_set_value(device_ctx->reset_gpio_pin, GPIO_HIGH);
     msleep(10);
 
     /* LCD initialization sequence */
@@ -236,7 +235,7 @@ int nokia5110_clear_display_screen(struct nokia5110_device_context *device_ctx) 
         nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_X_ADDRESS | 0);
 
         /* Clear all columns in this bank */
-        for (column_index = 0; column_index < DISPLAY_WIDTH_PIXELS; column_index++) {\
+        for (column_index = 0; column_index < DISPLAY_WIDTH_PIXELS; column_index++) {
             nokia5110_send_spi_data(device_ctx, 0x00);
         }
     }
@@ -263,11 +262,11 @@ static int nokia5110_set_cursor_position(struct nokia5110_device_context *device
     /* Set Y address (bank) */
     nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_Y_ADDRESS | y_pos);
 
-    /* Set X addesss (column) */
-    nokia5110_send_spi_data(device_ctx, LCD_CMD_SET_X_ADDRESS | x_pos);
+    /* Set X address (column) */
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_SET_X_ADDRESS | x_pos);
 
-    device_ctx->current_cursor_x = 0;
-    device_ctx->current_cursor_y = 0;
+    device_ctx->current_cursor_x = x_pos;
+    device_ctx->current_cursor_y = y_pos;
 
     return 0;
 }
@@ -344,6 +343,112 @@ int nokia5110_write_text_to_display(struct nokia5110_device_context *device_ctx,
 }
 
 /**
+ * @brief Set display contrast level
+ * @param device_ctx Pointer to device context structure
+ * @param contrast_level Contrast level (0-127)
+ * @return 0 on sucess, negative error code on failure
+ */
+int nokia5110_set_display_contrast(struct nokia5110_device_context *device_ctx, uint8_t contrast_level) {
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_EXTENDED_INSTR);
+    nokia5110_send_spi_command(device_ctx, 0x80 | (contrast_level & 0x7F));
+    nokia5110_send_spi_command(device_ctx, LCD_CMD_FUNCTION_SET);
+    device_ctx->display_contrast_level = contrast_level;
+    
+    return 0;
+}
+
+/* Character Device File Operations Implementation */
+
+/**
+ * @brief Character device open operation
+ * @param inode_ptr Pointer to inode structure
+ * @param file_ptr Pointer to file structure
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_char_device_open(struct inode *inode_ptr, struct file *file_ptr) {
+    file_ptr->private_data = global_nokia_device;
+    dev_info(&global_nokia_device->spi_device_ptr->dev, "Nokia 5110 character device opened\n");
+
+    return 0;
+}
+
+/**
+ * @brief Character device release operation
+ * @param inode_ptr Pointer to inode structure
+ * @param file_ptr Pointer to file structure
+ * @return 0 on success, negative error code on failure
+ */
+static int nokia5110_char_device_release(struct inode *inode_ptr, struct file *file_ptr) {
+    dev_info(&global_nokia_device->spi_device_ptr->dev, "Nokia 5110 character device closed\n");
+
+    return 0;
+}
+
+/**
+ * @brief Character device write operation
+ * @param file_ptr Pointer to file structure
+ * @param user_buffer User space buffer containing data to write
+ * @param write_count Number of bytes to write
+ * @param file_position File position pointer
+ * @return Number of bytes written or negative error code
+ */
+static ssize_t nokia5110_char_device_write(struct file *file_ptr, const char __user *user_buffer, 
+                                            size_t write_count, loff_t *file_position) {
+    struct nokia5110_device_context *device_ctx = file_ptr->private_data;
+    char message_buffer[MAX_MESSAGE_BUFFER_SIZE];
+    size_t safe_write_count = min(write_count, (size_t)(MAX_MESSAGE_BUFFER_SIZE - 1));
+    
+    if (copy_from_user(message_buffer, user_buffer, safe_write_count)) {
+        return -EFAULT;
+    }
+    
+    message_buffer[safe_write_count] = '\0';
+    
+    dev_info(&device_ctx->spi_device_ptr->dev, 
+             "Writing text to display: %s\n", message_buffer);
+    
+    /* Clear screen and write new text */
+    nokia5110_clear_display_screen(device_ctx);
+    nokia5110_set_cursor_position(device_ctx, 0, 0);
+    nokia5110_write_text_to_display(device_ctx, message_buffer);
+    
+    /* Save message to device buffer */
+    strncpy(device_ctx->message_display_buffer, message_buffer, MAX_MESSAGE_BUFFER_SIZE - 1);
+    device_ctx->message_display_buffer[MAX_MESSAGE_BUFFER_SIZE - 1] = '\0';
+    
+    return safe_write_count;
+}
+
+/**
+ * @brief Character device read operation
+ * @param file_ptr Pointer to file structure
+ * @param user_buffer User space buffer to read data into
+ * @param read_count Number of bytes to read
+ * @param file_position File position pointer
+ * @return Number of bytes read or negative error code
+ */
+static ssize_t nokia5110_char_device_read(struct file *file_ptr, char __user *user_buffer, 
+                                            size_t read_count, loff_t *file_position) { 
+    struct nokia5110_device_context *device_ctx = file_ptr->private_data;
+    size_t buffer_length = strlen(device_ctx->message_display_buffer);
+
+    if (*file_position >= buffer_length) {
+        return 0;   // End of file
+    }
+
+    if (read_count > buffer_length - *file_position) {
+        read_count = buffer_length - *file_position;
+    }
+
+    if (copy_to_user(user_buffer, device_ctx->message_display_buffer + *file_position, read_count)) {
+        return -EFAULT;
+    }
+
+    *file_position += read_count;
+    return read_count;
+}
+
+/**
  * @brief Create character device file node
  * @param device_ctx Pointer to device context
  * @return 0 on success, negative error code on failure
@@ -416,7 +521,7 @@ static int nokia5110_spi_probe_callback(struct spi_device *spi_device) {
     struct device_node *device_tree_node = spi_device->dev.of_node;
     int result;
 
-    dev_info(&spi_device->dev, "Nokia 5110 SPI probe started");
+    dev_info(&spi_device->dev, "Nokia 5110 SPI probe started\n");
 
     /* Allocate device context structure */
     device_ctx = devm_kzalloc(&spi_device->dev, sizeof(*device_ctx), GFP_KERNEL);
@@ -438,7 +543,7 @@ static int nokia5110_spi_probe_callback(struct spi_device *spi_device) {
 
     device_ctx->dc_gpio_pin = of_get_named_gpio(device_tree_node, "dc-gpios", 0);
     if (device_ctx->dc_gpio_pin < 0) {
-        dev_err(&spi_device->dev, "Failed to get reset GPIO from Device tree\n");
+        dev_err(&spi_device->dev, "Failed to get DC GPIO from Device tree\n");
         return device_ctx->dc_gpio_pin;
     }
 
@@ -468,7 +573,7 @@ static int nokia5110_spi_probe_callback(struct spi_device *spi_device) {
 
     dev_info(&spi_device->dev, "Nokia 5110 probe completed successfully\n");
     return 0;
-};
+}
 
 /**
  * @brief SPI remove callback function
@@ -480,7 +585,7 @@ static int nokia5110_spi_remove_callback(struct spi_device *spi_device) {
 
     dev_info(&spi_device->dev, "Nokia 5110 SPI remove started\n");
 
-    /* Display goobye message */
+    /* Display goodbye message */
     nokia5110_write_text_to_display(device_ctx, "GOODBYE!\nShutdown...");
     msleep(1000);
 
@@ -498,7 +603,7 @@ static int nokia5110_spi_remove_callback(struct spi_device *spi_device) {
     gpio_free(device_ctx->dc_gpio_pin);
 
         /* Clear global reference */
-    global_nokia5110_device = NULL;
+    global_nokia_device = NULL;
     
     dev_info(&spi_device->dev, "Nokia 5110 SPI remove completed\n");
     return 0;
